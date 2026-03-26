@@ -30,7 +30,8 @@ def extract_video_id(url: str) -> str:
     raise typer.Exit(1)
 
 
-def fetch_youtube_captions(video_id: str, language: Optional[str], console: Console) -> Optional[str]:
+def fetch_youtube_captions(video_id: str, language: Optional[str], console: Console) -> Optional[tuple[str, bool]]:
+    """Returns (transcript_text, is_generated) or None if no captions available."""
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
 
@@ -53,11 +54,13 @@ def fetch_youtube_captions(video_id: str, language: Optional[str], console: Cons
         if transcript is None:
             return None
 
+        is_generated = getattr(transcript, "is_generated", True)
         fetched = transcript.fetch()
-        return "\n".join(
+        text = "\n".join(
             s.text if hasattr(s, "text") else s["text"]
             for s in fetched
         )
+        return text, is_generated
     except Exception:
         return None
 
@@ -163,10 +166,12 @@ def main(
 
     if not force_whisper:
         with console.status("Fetching YouTube captions..."):
-            transcript = fetch_youtube_captions(video_id, effective_language, console)
+            captions_result = fetch_youtube_captions(video_id, effective_language, console)
 
-        if transcript:
-            console.print("[green]✓[/green] Found YouTube captions")
+        if captions_result:
+            transcript, is_generated = captions_result
+            label = "auto-generated captions" if is_generated else "captions"
+            console.print(f"[green]✓[/green] Found YouTube {label}")
         else:
             console.print("[yellow]No captions found[/yellow] — falling back to Whisper")
 
@@ -202,10 +207,12 @@ def main(
 
 def _fetch_title(url: str) -> Optional[str]:
     try:
-        import yt_dlp
-        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as ydl:
-            info = ydl.extract_info(url, download=False)
-            return info.get("title")
+        import json
+        import urllib.request
+        oembed_url = f"https://www.youtube.com/oembed?url={url}&format=json"
+        with urllib.request.urlopen(oembed_url, timeout=10) as resp:
+            data = json.loads(resp.read())
+            return data.get("title")
     except Exception:
         return None
 
