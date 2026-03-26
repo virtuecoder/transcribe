@@ -2,8 +2,8 @@
 install:
     uv sync
 
-# Transcribe a YouTube video
-# Usage: just run <url> [--model turbo] [--force-whisper] [--output file.txt]
+# Transcribe a YouTube URL, video ID, or local audio/video file
+# Usage: just run <url-or-path> [--model turbo] [--force-whisper] [--output file.txt]
 [positional-arguments]
 run *args:
     @uv run transcribe run "$@"

@@ -1,13 +1,13 @@
 # yt-transcribe
 
-CLI tool that extracts transcripts from YouTube videos. Fetches existing captions when available; otherwise downloads audio and transcribes locally with [Whisper](https://github.com/SYSTRAN/faster-whisper).
+CLI tool that transcribes YouTube videos and local audio/video files. For YouTube, it fetches existing captions when available; otherwise downloads audio and transcribes locally with [Whisper](https://github.com/SYSTRAN/faster-whisper). Local files always go through Whisper directly.
 
 ## Requirements
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
 - [just](https://just.systems/)
-- [ffmpeg](https://ffmpeg.org/) — required when Whisper is used (no captions available)
+- [ffmpeg](https://ffmpeg.org/) — required by `yt-dlp` when downloading YouTube audio (not needed for local files, which are decoded by faster-whisper's bundled FFmpeg)
 
 ### macOS
 
@@ -43,7 +43,7 @@ Then restart your terminal so the new PATH entries take effect.
 > **Note:** `faster-whisper` requires the [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) (x64). Install it if you see a DLL error on first Whisper run.
 
 ## Setup
-
+""
 ```bash
 cd transcribe
 just install
@@ -52,6 +52,11 @@ just install
 ## Usage
 
 ```bash
+# Transcribe a local audio or video file (any format FFmpeg supports)
+just run recording.mp3
+just run /path/to/interview.mp4
+just run ~/Downloads/lecture.m4a
+
 # Fetch captions if available, otherwise run Whisper — saves to ~/Downloads by default
 just run "https://youtube.com/watch?v=VIDEO_ID"
 
@@ -121,11 +126,28 @@ vad_filter = true       # skip silent segments (recommended)
 | `--output` | `-o` | — | Save to this exact path (overrides `output_dir` in config) |
 | `--model` | `-m` | from config | Whisper model size |
 | `--language` | `-l` | auto-detect | Override language, e.g. `en`, `fr`, `de`. Omit to auto-detect — useful only when detection gets it wrong or the video has mixed-language content. |
-| `--force-whisper` | `-w` | off | Skip caption lookup, always use Whisper |
+| `--force-whisper` | `-w` | off | Skip caption lookup, always use Whisper (ignored for local files — Whisper is always used) |
 
 By default the transcript is **saved to `~/Downloads`** using the video title as the filename. Change `output_dir` in config to save elsewhere. Use `--print` to get stdout behaviour instead.
 
 CLI flags always override config values.
+
+## Whisper performance
+
+Measured on a 4m 52s audio clip (Polish speech, CPU, `int8`):
+
+| Model | Elapsed | Seconds per audio-minute | Time for 1h video |
+|---|---|---|---|
+| `tiny` | 15.4s | 3.2s | ~3 min |
+| `base` | 25.4s | 5.2s | ~5 min |
+| `small` | 70.1s | 14.4s | ~14 min |
+| `turbo` | 90.8s | 18.7s | ~19 min |
+
+`medium` and `large-v3` skipped — extrapolate the trend.
+
+- `tiny` is nearly 6× faster than `turbo` on CPU
+- `turbo` is the default because it trades that speed for much better accuracy — especially on non-English audio
+- For quick drafts or batch jobs where accuracy matters less, `base` is a good middle ground
 
 ## Whisper models
 
@@ -143,35 +165,37 @@ Model weights are downloaded from HuggingFace on first use and cached at `~/.cac
 ## How it works
 
 ```
-                   ┌─────────────────────┐
-                   │   YouTube URL / ID  │
-                   └──────────┬──────────┘
-                              │ extract video ID
-                              ▼
-                 ┌────────────────────────┐
-                 │  Fetch YouTube captions │  ◄── youtube-transcript-api
-                 │  (any available lang)   │      prefers manual over auto-generated
-                 └────────────┬───────────┘
-                              │
-              ┌───────────────┴──────────────┐
-              │ Captions found?              │
-              ▼                              ▼
-           Yes: done                  No: fallback
-                                           │
-                                    ┌──────▼──────┐
-                                    │  Download   │  ◄── yt-dlp + ffmpeg
-                                    │  audio      │      best quality stream
-                                    └──────┬──────┘
-                                           │
-                                    ┌──────▼──────┐
-                                    │   Whisper   │  ◄── faster-whisper
-                                    │  transcribe │      CTranslate2, CPU/GPU
-                                    └──────┬──────┘
-                                           │ audio deleted from temp dir
-                                           ▼
-                         ┌─────────────────────────────┐
-                         │  --output / output_dir / stdout │
-                         └─────────────────────────────┘
+      ┌─────────────────────┐          ┌──────────────────────┐
+      │   YouTube URL / ID  │          │   Local audio/video  │
+      └──────────┬──────────┘          └───────────┬──────────┘
+                 │ extract video ID                 │
+                 ▼                                  │
+    ┌────────────────────────┐                      │
+    │  Fetch YouTube captions │  ◄── youtube-transcript-api
+    │  (any available lang)   │      prefers manual over auto-generated
+    └────────────┬───────────┘                      │
+                 │                                  │
+  ┌──────────────┴─────────────┐                    │
+  │ Captions found?            │                    │
+  ▼                            ▼                    │
+Yes: done              No: fallback                 │
+                              │                     │
+                       ┌──────▼──────┐              │
+                       │  Download   │  ◄── yt-dlp + ffmpeg
+                       │  audio      │      best quality stream
+                       └──────┬──────┘              │
+                              │                     │
+                              └──────────┬──────────┘
+                                         │
+                                  ┌──────▼──────┐
+                                  │   Whisper   │  ◄── faster-whisper
+                                  │  transcribe │      CTranslate2, CPU/GPU
+                                  └──────┬──────┘
+                                         │ temp audio deleted (YouTube only)
+                                         ▼
+                       ┌─────────────────────────────┐
+                       │  --output / output_dir / stdout │
+                       └─────────────────────────────┘
 ```
 
 ### Caption lookup
@@ -181,6 +205,17 @@ Uses [`youtube-transcript-api`](https://github.com/jdepoix/youtube-transcript-ap
 - The video owner disabled captions
 - The video is too new for auto-generation to finish
 - YouTube rate-limits the request
+
+### Supported file formats
+
+faster-whisper uses [PyAV](https://github.com/PyAV-Org/PyAV) (bundled FFmpeg) to decode audio, so any format FFmpeg handles is accepted — no system ffmpeg installation required for local files.
+
+Common formats:
+
+| Type | Extensions |
+|---|---|
+| Audio | `.mp3` `.m4a` `.aac` `.wav` `.flac` `.ogg` `.opus` `.wma` `.aiff` |
+| Video (audio extracted) | `.mp4` `.mkv` `.mov` `.avi` `.webm` `.ts` |
 
 ### Whisper transcription
 
