@@ -14,6 +14,14 @@ run *args:
 config *args:
     uv run transcribe config "$@"
 
+# Run unit tests (no network)
+test:
+    uv run pytest tests/ -m "not network" -v
+
+# Run smoke tests against real YouTube (requires network)
+smoke:
+    uv run pytest tests/test_smoke.py -m network -v
+
 # List available Whisper models
 models:
     @echo "tiny           (~75MB)   fastest, lowest accuracy"
