@@ -227,7 +227,9 @@ def config_cmd(
     if edit:
         import os
         import subprocess
-        editor = os.environ.get("EDITOR", "nano")
+        import sys
+        default_editor = "notepad" if sys.platform == "win32" else "nano"
+        editor = os.environ.get("EDITOR", default_editor)
         subprocess.run([editor, str(path)])
     elif show:
         _console.print(path.read_text())

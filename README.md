@@ -5,8 +5,42 @@ CLI tool that extracts transcripts from YouTube videos. Fetches existing caption
 ## Requirements
 
 - Python 3.11+
-- [uv](https://docs.astral.sh/uv/) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- [just](https://just.systems/) — `brew install just`
+- [uv](https://docs.astral.sh/uv/)
+- [just](https://just.systems/)
+- [ffmpeg](https://ffmpeg.org/) — required when Whisper is used (no captions available)
+
+### macOS
+
+```bash
+brew install uv just ffmpeg
+```
+
+### Linux (Debian/Ubuntu)
+
+```bash
+# uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# just
+curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
+
+# ffmpeg
+sudo apt install ffmpeg
+```
+
+For other distros replace `apt install ffmpeg` with your package manager (`dnf`, `pacman`, etc.). The `just` binary can also be downloaded from its [GitHub releases](https://github.com/casey/just/releases).
+
+### Windows
+
+```powershell
+winget install astral-sh.uv
+winget install Casey.Just
+winget install ffmpeg
+```
+
+Then restart your terminal so the new PATH entries take effect.
+
+> **Note:** `faster-whisper` requires the [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) (x64). Install it if you see a DLL error on first Whisper run.
 
 ## Setup
 
@@ -18,7 +52,7 @@ just install
 ## Usage
 
 ```bash
-# Fetch captions if available, otherwise run Whisper — saves to current dir by default
+# Fetch captions if available, otherwise run Whisper — saves to ~/Downloads by default
 just run "https://youtube.com/watch?v=VIDEO_ID"
 
 # Save to a specific file
@@ -26,7 +60,11 @@ just run "https://youtube.com/watch?v=VIDEO_ID" --output transcript.txt
 
 # Print to stdout (all status output suppressed — safe to pipe)
 just run "https://youtube.com/watch?v=VIDEO_ID" --print
+
+# Copy to clipboard (macOS: pbcopy, Linux: xclip, Windows: clip)
 just run "https://youtube.com/watch?v=VIDEO_ID" --print | pbcopy
+just run "https://youtube.com/watch?v=VIDEO_ID" --print | xclip -selection clipboard
+just run "https://youtube.com/watch?v=VIDEO_ID" --print | clip
 
 # Force Whisper even if captions exist
 just run "https://youtube.com/watch?v=VIDEO_ID" --force-whisper
@@ -43,12 +81,18 @@ just models
 
 ## Config
 
-Defaults are stored in `~/.config/yt-transcribe/config.toml`. On first run with `just config --edit` the file is created with all options documented inline.
+Defaults are stored in a platform-specific config file:
+
+| Platform | Path |
+|---|---|
+| macOS | `~/Library/Application Support/yt-transcribe/config.toml` |
+| Linux | `~/.config/yt-transcribe/config.toml` |
+| Windows | `%LOCALAPPDATA%\yt-transcribe\config.toml` |
 
 ```bash
 just config           # show config file path
 just config --show    # print current config
-just config --edit    # open in $EDITOR
+just config --edit    # open in $EDITOR (or notepad on Windows)
 ```
 
 Default config:
@@ -57,7 +101,7 @@ Default config:
 [defaults]
 model = "turbo"         # tiny | base | small | medium | turbo | large-v3
 language = ""           # empty = auto-detect per video
-output_dir = ""         # if set, transcripts are auto-saved here (uses video title as filename)
+output_dir = "~/Downloads"  # transcripts are auto-saved here (uses video title as filename)
 output_extension = "txt"
 
 [whisper]
@@ -67,7 +111,7 @@ beam_size = 5           # higher = more accurate, slower (1–10)
 vad_filter = true       # skip silent segments (recommended)
 ```
 
-**`output_dir`** — when set, every transcription is auto-saved to `<output_dir>/<video title>.<output_extension>` without needing `--output`. Useful for batch use.
+**`output_dir`** — when set, every transcription is auto-saved to `<output_dir>/<video title>.<output_extension>` without needing `--output`. Useful for batch use. Supports `~` expansion.
 
 ## Options
 
@@ -79,13 +123,13 @@ vad_filter = true       # skip silent segments (recommended)
 | `--language` | `-l` | auto-detect | Override language, e.g. `en`, `fr`, `de`. Omit to auto-detect — useful only when detection gets it wrong or the video has mixed-language content. |
 | `--force-whisper` | `-w` | off | Skip caption lookup, always use Whisper |
 
-By default the transcript is **saved to a file** — to `output_dir` from config if set, otherwise to the current directory, using the video title as the filename. Use `--print` to get stdout behaviour instead.
+By default the transcript is **saved to `~/Downloads`** using the video title as the filename. Change `output_dir` in config to save elsewhere. Use `--print` to get stdout behaviour instead.
 
 CLI flags always override config values.
 
 ## Whisper models
 
-Model weights are downloaded from HuggingFace on first use and cached at `~/.cache/huggingface/hub/`. Subsequent runs use the cached copy — no re-download. Override the location with the `HF_HUB_CACHE` environment variable.
+Model weights are downloaded from HuggingFace on first use and cached at `~/.cache/huggingface/hub/` (macOS/Linux) or `%USERPROFILE%\.cache\huggingface\hub\` (Windows). Subsequent runs use the cached copy — no re-download. Override with the `HF_HUB_CACHE` environment variable.
 
 | Model | Size | Speed | Accuracy |
 |---|---|---|---|
@@ -115,7 +159,7 @@ Model weights are downloaded from HuggingFace on first use and cached at `~/.cac
            Yes: done                  No: fallback
                                            │
                                     ┌──────▼──────┐
-                                    │  Download   │  ◄── yt-dlp
+                                    │  Download   │  ◄── yt-dlp + ffmpeg
                                     │  audio      │      best quality stream
                                     └──────┬──────┘
                                            │
@@ -155,3 +199,4 @@ Uses [`youtube-transcript-api`](https://github.com/jdepoix/youtube-transcript-ap
 | [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) | Local speech-to-text |
 | [`typer`](https://typer.tiangolo.com/) | CLI framework |
 | [`rich`](https://rich.readthedocs.io/) | Terminal output |
+| [`platformdirs`](https://platformdirs.readthedocs.io/) | Platform-appropriate config paths |

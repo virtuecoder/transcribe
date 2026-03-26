@@ -7,14 +7,16 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-CONFIG_PATH = Path.home() / ".config" / "yt-transcribe" / "config.toml"
+from platformdirs import user_config_dir
+
+CONFIG_PATH = Path(user_config_dir("yt-transcribe")) / "config.toml"
 
 # Written on first run if the file doesn't exist yet.
 _DEFAULT_TOML = """\
 [defaults]
 model = "turbo"         # tiny | base | small | medium | turbo | large-v3
 language = ""           # empty = auto-detect per video
-output_dir = ""         # if set, transcripts are auto-saved here (uses video title as filename)
+output_dir = "~/Downloads"  # transcripts are auto-saved here (uses video title as filename)
 output_extension = "txt"
 
 [whisper]
@@ -28,7 +30,7 @@ _DEFAULTS: dict[str, Any] = {
     "defaults": {
         "model": "turbo",
         "language": "",
-        "output_dir": "",
+        "output_dir": "~/Downloads",
         "output_extension": "txt",
     },
     "whisper": {
