@@ -7,6 +7,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 
+from shared.utils import sanitize_filename, unique_path
 from transcribe import config as cfg_module
 
 app = typer.Typer(help="Transcribe a YouTube video or local audio/video file.")
@@ -31,12 +32,28 @@ def _extract_video_id(url: str) -> Optional[str]:
     return None
 
 
+def _cookies_file() -> Optional[str]:
+    """Return path to a Netscape cookies file from env, or None."""
+    import os
+    return os.environ.get("YOUTUBE_COOKIES_FILE") or None
+
+
 def fetch_youtube_captions(video_id: str, language: Optional[str], console: Console) -> Optional[tuple[str, bool]]:
     """Returns (transcript_text, is_generated) or None if no captions available."""
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
 
-        ytt = YouTubeTranscriptApi()
+        cookies = _cookies_file()
+        if cookies:
+            import http.cookiejar
+            import requests
+            session = requests.Session()
+            jar = http.cookiejar.MozillaCookieJar(cookies)
+            jar.load(ignore_discard=True, ignore_expires=True)
+            session.cookies = jar  # type: ignore[assignment]
+            ytt = YouTubeTranscriptApi(http_client=session)
+        else:
+            ytt = YouTubeTranscriptApi()
         transcript_list = ytt.list(video_id)
         # Materialise to avoid exhausting a one-shot iterator on the language scan below.
         all_transcripts = list(transcript_list)
@@ -65,23 +82,6 @@ def fetch_youtube_captions(video_id: str, language: Optional[str], console: Cons
     except Exception:
         return None
 
-
-def sanitize_filename(name: str, max_length: int = 200) -> str:
-    sanitized = re.sub(r'[<>:"/\\|?*]', "_", name).strip()
-    return sanitized[:max_length]
-
-
-def unique_path(path: Path) -> Path:
-    """Return path unchanged if it doesn't exist, otherwise append (1), (2), … until free."""
-    if not path.exists():
-        return path
-    stem, suffix = path.stem, path.suffix
-    counter = 1
-    while True:
-        candidate = path.with_name(f"{stem} ({counter}){suffix}")
-        if not candidate.exists():
-            return candidate
-        counter += 1
 
 
 def _run_whisper(
@@ -153,6 +153,8 @@ def _transcribe_youtube(
                 "quiet": True,
                 "no_warnings": True,
             }
+            if _cookies_file():
+                ydl_opts["cookiefile"] = _cookies_file()
 
             with console.status("Downloading audio..."):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:

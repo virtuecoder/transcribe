@@ -4,43 +4,44 @@ from pathlib import Path
 from unittest.mock import patch
 
 from transcribe import config as cfg_module
+from shared import config as shared_cfg
 
 
 class TestDeepCopy:
     def test_mutating_copy_does_not_affect_original(self):
         original = {"a": {"x": 1}, "b": 2}
-        copy = cfg_module._deep_copy(original)
+        copy = shared_cfg._deep_copy(original)
         copy["a"]["x"] = 99
         assert original["a"]["x"] == 1
 
     def test_top_level_scalar_copied(self):
         original = {"a": {"x": 1}, "b": 2}
-        copy = cfg_module._deep_copy(original)
+        copy = shared_cfg._deep_copy(original)
         assert copy == original
 
 
 class TestMerge:
     def test_override_replaces_leaf(self):
         base = {"defaults": {"model": "turbo", "language": ""}}
-        result = cfg_module._merge(base, {"defaults": {"model": "large-v3"}})
+        result = shared_cfg._merge(base, {"defaults": {"model": "large-v3"}})
         assert result["defaults"]["model"] == "large-v3"
         assert result["defaults"]["language"] == ""  # untouched
 
     def test_unknown_key_in_override_is_added(self):
         base = {"defaults": {"model": "turbo"}}
-        result = cfg_module._merge(base, {"new_section": {"foo": "bar"}})
+        result = shared_cfg._merge(base, {"new_section": {"foo": "bar"}})
         assert result["new_section"] == {"foo": "bar"}
 
     def test_nested_dicts_merged_not_replaced(self):
         base = {"whisper": {"device": "cpu", "beam_size": 5}}
-        result = cfg_module._merge(base, {"whisper": {"device": "cuda"}})
+        result = shared_cfg._merge(base, {"whisper": {"device": "cuda"}})
         assert result["whisper"]["beam_size"] == 5  # preserved
         assert result["whisper"]["device"] == "cuda"
 
     def test_scalar_override_replaces_dict(self):
         # Non-dict override should win even if base has a dict
         base = {"key": {"nested": 1}}
-        result = cfg_module._merge(base, {"key": "flat"})
+        result = shared_cfg._merge(base, {"key": "flat"})
         assert result["key"] == "flat"
 
 

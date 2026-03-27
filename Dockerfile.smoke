@@ -1,0 +1,19 @@
+ARG PYTHON_VERSION=3.13
+FROM python:${PYTHON_VERSION}-slim
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
+# Install git (needed to clone)
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Clone the repository
+RUN git clone https://github.com/virtuecoder/transcribe.git .
+
+# Install dependencies (including dev group for pytest)
+RUN uv sync --group dev
+
+# Run smoke tests by default
+CMD ["uv", "run", "pytest", "tests/test_smoke.py", "-m", "network", "-v"]

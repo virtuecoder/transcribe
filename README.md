@@ -1,13 +1,13 @@
 # yt-transcribe
 
-CLI tool that transcribes YouTube videos and local audio/video files. For YouTube, it fetches existing captions when available; otherwise downloads audio and transcribes locally with [Whisper](https://github.com/SYSTRAN/faster-whisper). Local files always go through Whisper directly.
+CLI tool that transcribes YouTube videos and local audio/video files. For YouTube, it fetches existing captions when available; otherwise downloads audio and transcribes locally with [Whisper](https://github.com/SYSTRAN/faster-whisper).
 
 ## Requirements
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
 - [just](https://just.systems/)
-- [ffmpeg](https://ffmpeg.org/) — required by `yt-dlp` when downloading YouTube audio (not needed for local files, which are decoded by faster-whisper's bundled FFmpeg)
+- [ffmpeg](https://ffmpeg.org/) — required when downloading YouTube audio (not needed for local files)
 
 ### macOS
 
@@ -18,17 +18,10 @@ brew install uv just ffmpeg
 ### Linux (Debian/Ubuntu)
 
 ```bash
-# uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# just
 curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
-
-# ffmpeg
 sudo apt install ffmpeg
 ```
-
-For other distros replace `apt install ffmpeg` with your package manager (`dnf`, `pacman`, etc.). The `just` binary can also be downloaded from its [GitHub releases](https://github.com/casey/just/releases).
 
 ### Windows
 
@@ -38,200 +31,31 @@ winget install Casey.Just
 winget install ffmpeg
 ```
 
-Then restart your terminal so the new PATH entries take effect.
-
 > **Note:** `faster-whisper` requires the [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe) (x64). Install it if you see a DLL error on first Whisper run.
 
 ## Setup
-""
+
 ```bash
 cd transcribe
 just install
 ```
 
-## Usage
+## Quick start
 
 ```bash
-# Transcribe a local audio or video file (any format FFmpeg supports)
-just run recording.mp3
-just run /path/to/interview.mp4
-just run ~/Downloads/lecture.m4a
-
-# Fetch captions if available, otherwise run Whisper — saves to ~/Downloads by default
+# Transcribe a YouTube video (captions if available, Whisper otherwise)
 just run "https://youtube.com/watch?v=VIDEO_ID"
 
-# Save to a specific file
-just run "https://youtube.com/watch?v=VIDEO_ID" --output transcript.txt
+# Transcribe a local file
+just run recording.mp3
 
-# Print to stdout (all status output suppressed — safe to pipe)
+# Print to stdout (safe to pipe)
 just run "https://youtube.com/watch?v=VIDEO_ID" --print
-
-# Copy to clipboard (macOS: pbcopy, Linux: xclip, Windows: clip)
-just run "https://youtube.com/watch?v=VIDEO_ID" --print | pbcopy
-just run "https://youtube.com/watch?v=VIDEO_ID" --print | xclip -selection clipboard
-just run "https://youtube.com/watch?v=VIDEO_ID" --print | clip
-
-# Force Whisper even if captions exist
-just run "https://youtube.com/watch?v=VIDEO_ID" --force-whisper
-
-# Use a specific Whisper model
-just run "https://youtube.com/watch?v=VIDEO_ID" --model large-v3
-
-# Force language (auto-detected by default)
-just run "https://youtube.com/watch?v=VIDEO_ID" --language de
-
-# See all model options
-just models
 ```
 
-## Config
+Transcripts are saved to `~/Downloads` by default using the video title as the filename.
 
-Defaults are stored in a platform-specific config file:
+## Documentation
 
-| Platform | Path |
-|---|---|
-| macOS | `~/Library/Application Support/yt-transcribe/config.toml` |
-| Linux | `~/.config/yt-transcribe/config.toml` |
-| Windows | `%LOCALAPPDATA%\yt-transcribe\config.toml` |
-
-```bash
-just config           # show config file path
-just config --show    # print current config
-just config --edit    # open in $EDITOR (or notepad on Windows)
-```
-
-Default config:
-
-```toml
-[defaults]
-model = "turbo"         # tiny | base | small | medium | turbo | large-v3
-language = ""           # empty = auto-detect per video
-output_dir = "~/Downloads"  # transcripts are auto-saved here (uses video title as filename)
-output_extension = "txt"
-
-[whisper]
-device = "cpu"          # cpu | cuda (use cuda if you have a GPU)
-compute_type = "int8"   # int8 (fast CPU) | float16 (GPU) | float32 (precise)
-beam_size = 5           # higher = more accurate, slower (1–10)
-vad_filter = true       # skip silent segments (recommended)
-```
-
-**`output_dir`** — when set, every transcription is auto-saved to `<output_dir>/<video title>.<output_extension>` without needing `--output`. Useful for batch use. Supports `~` expansion.
-
-## Options
-
-| Flag | Short | Default | Description |
-|---|---|---|---|
-| `--print` | `-p` | off | Print to stdout instead of saving; suppresses all status output (safe to pipe) |
-| `--output` | `-o` | — | Save to this exact path (overrides `output_dir` in config) |
-| `--model` | `-m` | from config | Whisper model size |
-| `--language` | `-l` | auto-detect | Override language, e.g. `en`, `fr`, `de`. Omit to auto-detect — useful only when detection gets it wrong or the video has mixed-language content. |
-| `--force-whisper` | `-w` | off | Skip caption lookup, always use Whisper (ignored for local files — Whisper is always used) |
-
-By default the transcript is **saved to `~/Downloads`** using the video title as the filename. Change `output_dir` in config to save elsewhere. Use `--print` to get stdout behaviour instead.
-
-CLI flags always override config values.
-
-## Whisper performance
-
-Measured on a 4m 52s audio clip (Polish speech, CPU, `int8`):
-
-| Model | Elapsed | Seconds per audio-minute | Time for 1h video |
-|---|---|---|---|
-| `tiny` | 15.4s | 3.2s | ~3 min |
-| `base` | 25.4s | 5.2s | ~5 min |
-| `small` | 70.1s | 14.4s | ~14 min |
-| `turbo` | 90.8s | 18.7s | ~19 min |
-
-`medium` and `large-v3` skipped — extrapolate the trend.
-
-- `tiny` is nearly 6× faster than `turbo` on CPU
-- `turbo` is the default because it trades that speed for much better accuracy — especially on non-English audio
-- For quick drafts or batch jobs where accuracy matters less, `base` is a good middle ground
-
-## Whisper models
-
-Model weights are downloaded from HuggingFace on first use and cached at `~/.cache/huggingface/hub/` (macOS/Linux) or `%USERPROFILE%\.cache\huggingface\hub\` (Windows). Subsequent runs use the cached copy — no re-download. Override with the `HF_HUB_CACHE` environment variable.
-
-| Model | Size | Speed | Accuracy |
-|---|---|---|---|
-| `tiny` | ~75 MB | fastest | lowest |
-| `base` | ~140 MB | fast | decent |
-| `small` | ~460 MB | moderate | good |
-| `medium` | ~1.5 GB | slow | better |
-| `turbo` | ~800 MB | fast | best for size — **default** |
-| `large-v3` | ~3 GB | slowest | highest |
-
-## How it works
-
-```
-      ┌─────────────────────┐          ┌──────────────────────┐
-      │   YouTube URL / ID  │          │   Local audio/video  │
-      └──────────┬──────────┘          └───────────┬──────────┘
-                 │ extract video ID                 │
-                 ▼                                  │
-    ┌────────────────────────┐                      │
-    │  Fetch YouTube captions │  ◄── youtube-transcript-api
-    │  (any available lang)   │      prefers manual over auto-generated
-    └────────────┬───────────┘                      │
-                 │                                  │
-  ┌──────────────┴─────────────┐                    │
-  │ Captions found?            │                    │
-  ▼                            ▼                    │
-Yes: done              No: fallback                 │
-                              │                     │
-                       ┌──────▼──────┐              │
-                       │  Download   │  ◄── yt-dlp + ffmpeg
-                       │  audio      │      best quality stream
-                       └──────┬──────┘              │
-                              │                     │
-                              └──────────┬──────────┘
-                                         │
-                                  ┌──────▼──────┐
-                                  │   Whisper   │  ◄── faster-whisper
-                                  │  transcribe │      CTranslate2, CPU/GPU
-                                  └──────┬──────┘
-                                         │ temp audio deleted (YouTube only)
-                                         ▼
-                       ┌─────────────────────────────┐
-                       │  --output / output_dir / stdout │
-                       └─────────────────────────────┘
-```
-
-### Caption lookup
-
-Uses [`youtube-transcript-api`](https://github.com/jdepoix/youtube-transcript-api) to fetch captions from YouTube's internal API — no audio download needed, instant. Prefers manually uploaded captions over auto-generated ones. Falls back to Whisper when:
-
-- The video owner disabled captions
-- The video is too new for auto-generation to finish
-- YouTube rate-limits the request
-
-### Supported file formats
-
-faster-whisper uses [PyAV](https://github.com/PyAV-Org/PyAV) (bundled FFmpeg) to decode audio, so any format FFmpeg handles is accepted — no system ffmpeg installation required for local files.
-
-Common formats:
-
-| Type | Extensions |
-|---|---|
-| Audio | `.mp3` `.m4a` `.aac` `.wav` `.flac` `.ogg` `.opus` `.wma` `.aiff` |
-| Video (audio extracted) | `.mp4` `.mkv` `.mov` `.avi` `.webm` `.ts` |
-
-### Whisper transcription
-
-1. **Download** — `yt-dlp` fetches the best available audio stream to a temp directory.
-2. **Transcribe** — `faster-whisper` runs the Whisper model with `vad_filter=True` to skip silent segments. Language is auto-detected unless overridden.
-3. **Cleanup** — temp audio file deleted automatically.
-
-`faster-whisper` uses [CTranslate2](https://github.com/OpenNMT/CTranslate2) under the hood — 4–8× faster than OpenAI's original Whisper on CPU using `int8` quantization.
-
-## Dependencies
-
-| Package | Purpose |
-|---|---|
-| [`youtube-transcript-api`](https://github.com/jdepoix/youtube-transcript-api) | Fetch YouTube captions |
-| [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) | Download audio |
-| [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper) | Local speech-to-text |
-| [`typer`](https://typer.tiangolo.com/) | CLI framework |
-| [`rich`](https://rich.readthedocs.io/) | Terminal output |
-| [`platformdirs`](https://platformdirs.readthedocs.io/) | Platform-appropriate config paths |
+- [User Manual](docs/USER_MANUAL.md) — all options, config, examples, clipboard usage
+- [Technical Details](docs/TECHNICAL.md) — architecture, dependencies, performance benchmarks

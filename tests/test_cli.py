@@ -4,7 +4,8 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
-from transcribe.cli import _extract_video_id, sanitize_filename, unique_path, app
+from transcribe.cli import _extract_video_id, app
+from shared.utils import sanitize_filename, unique_path
 
 runner = CliRunner()
 
